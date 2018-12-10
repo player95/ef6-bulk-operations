@@ -768,23 +768,25 @@ namespace Tanneryd.BulkOperations.EF6
                 var conditionStatements = selectedKeyMappings.Select(c => $"t0.[{c.TableColumn.Name}] = t1.[{c.TableColumn.Name}]");
                 var conditionStatementsSql = string.Join(" AND ", conditionStatements);
                 var cmdBody = $@"
-                                 merge  {tableName.Fullname} t0
-                                 using  {tempTableName} t1
-                                 on  {conditionStatementsSql}
-                                 when matched    
-                                 then update set {setStatementsSql}
+                                 MERGE  {tableName.Fullname} t0
+                                 USING  {tempTableName} t1
+                                 ON  {conditionStatementsSql}
+                                 WHEN MATCHED    
+                                 THEN UPDATE SET {setStatementsSql}
                                 ";
                 if (request.InsertIfNew)
                 {
                     var columns = columnMappings.Values
+                       .Where(m => !(m.TableColumn.IsStoreGeneratedIdentity || m.TableColumn.IsStoreGeneratedComputed))
                        .Select(m => m.TableColumn.Name)
                        .ToArray();
+                    var columnNames = string.Join(",", columns.Select(c => $"[{c}]"));
                     var t0ColumnNames = string.Join(",", columns.Select(c => $"[t1].[{c}]"));
 
                     cmdBody = $@"
                                  {cmdBody}
-                                 when not matched 
-                                 then INSERT values({t0ColumnNames})
+                                 WHEN NOT MATCHED 
+                                 then INSERT ({columnNames}) values({t0ColumnNames})
                                 ";
 
                 }
