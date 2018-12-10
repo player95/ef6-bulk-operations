@@ -1,5 +1,6 @@
 ﻿/*
  * Copyright ©  2017-2018 Tånneryd IT AB
+ * Modified by larry.liu 2018.12.10, Copyright © 2018 Grapecity.com
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -206,7 +207,7 @@ namespace Tanneryd.BulkOperations.EF6
                 var tableName = GetTableName(ctx, typeof(T));
 
                 if (request.SortUsingClusteredIndex)
-                {                   
+                {
                     var clusteredIndexColumns =
                         GetClusteredIndexColumns(ctx, tableName.Fullname, request.Transaction);
                     request.Entities = clusteredIndexColumns.Any()
@@ -407,12 +408,12 @@ namespace Tanneryd.BulkOperations.EF6
                     (m.Value.TableColumn.IsStoreGeneratedIdentity && m.Value.TableColumn.TypeName != "uniqueidentifier") ||
                     m.Value.TableColumn.IsStoreGeneratedComputed);
 
-                    var tempTableName = CreateTempTable(
-                    conn,
-                    request.Transaction,
-                    tableName,
-                    keyMappings.Select(m => m.Value.TableColumn.Name).ToArray(),
-                    true);
+                var tempTableName = CreateTempTable(
+                conn,
+                request.Transaction,
+                tableName,
+                keyMappings.Select(m => m.Value.TableColumn.Name).ToArray(),
+                true);
 
                 // We only need the key columns and the 
                 // rowno column in our temp table.
@@ -461,7 +462,7 @@ namespace Tanneryd.BulkOperations.EF6
                 {
                     while (sqlDataReader.Read())
                     {
-                        var rowNo = (int) sqlDataReader[0];
+                        var rowNo = (int)sqlDataReader[0];
                         existingEntities.Add(items[rowNo]);
                     }
                 }
@@ -552,7 +553,7 @@ namespace Tanneryd.BulkOperations.EF6
                 }
 
                 bulkCopy.WriteToServer(table.CreateDataReader());
-                
+
                 var conditionStatements = keyMappings.Values.Select(c => $"t0.[{c.TableColumn.Name}] = t1.[{c.TableColumn.Name}]");
                 var conditionStatementsSql = string.Join(" AND ", conditionStatements);
                 var query = $@"SELECT [t0].*
@@ -562,7 +563,7 @@ namespace Tanneryd.BulkOperations.EF6
 
                 var cmd = new SqlCommand(query, conn, request.Transaction)
                 {
-                    CommandTimeout = (int) request.CommandTimeout.TotalSeconds
+                    CommandTimeout = (int)request.CommandTimeout.TotalSeconds
                 };
 
                 var selectedEntities = new List<T2>();
@@ -671,14 +672,14 @@ namespace Tanneryd.BulkOperations.EF6
 
                 var cmd = new SqlCommand(query, conn, request.Transaction);
                 cmd.CommandTimeout = (int)request.CommandTimeout.TotalSeconds;
-                
+
                 var existingEntities = new List<T1>();
 
                 using (var sqlDataReader = cmd.ExecuteReader())
                 {
                     while (sqlDataReader.Read())
                     {
-                        var rowNo = (int) sqlDataReader[0];
+                        var rowNo = (int)sqlDataReader[0];
                         existingEntities.Add(items[rowNo]);
                     }
                 }
@@ -766,34 +767,31 @@ namespace Tanneryd.BulkOperations.EF6
                 var setStatementsSql = string.Join(" , ", setStatements);
                 var conditionStatements = selectedKeyMappings.Select(c => $"t0.[{c.TableColumn.Name}] = t1.[{c.TableColumn.Name}]");
                 var conditionStatementsSql = string.Join(" AND ", conditionStatements);
-                var cmdBody = $@"UPDATE t0 SET {setStatementsSql}
-                                 FROM {tableName.Fullname} AS t0
-                                 INNER JOIN {tempTableName} AS t1 ON {conditionStatementsSql}
+                var cmdBody = $@"
+                                 merge  {tableName.Fullname} t0
+                                 using  {tempTableName} t1
+                                 on  {conditionStatementsSql}
+                                 when matched    
+                                 then update set {setStatementsSql}
                                 ";
-                var cmd = new SqlCommand(cmdBody, conn, transaction);
-                cmd.CommandTimeout = (int)request.CommandTimeout.TotalSeconds;
-                rowsAffected += cmd.ExecuteNonQuery();
-
                 if (request.InsertIfNew)
                 {
                     var columns = columnMappings.Values
-                        .Where(m => !primaryKeyMembers.Contains(m.TableColumn.Name))
-                        .Select(m => m.TableColumn.Name)
-                        .ToArray();
-                    var columnNames = string.Join(",", columns.Select(c => $"[{c}]"));
-                    var t0ColumnNames = string.Join(",", columns.Select(c => $"[t0].[{c}]"));
-                    cmdBody = $@"INSERT INTO {tableName.Fullname}
-                             SELECT {columnNames}
-                             FROM {tempTableName}
-                             EXCEPT
-                             SELECT {t0ColumnNames}
-                             FROM {tempTableName} AS t0
-                             INNER JOIN {tableName.Fullname} AS t1 ON {conditionStatementsSql}            
-                            ";
-                    cmd = new SqlCommand(cmdBody, conn, transaction);
-                    cmd.CommandTimeout = (int)request.CommandTimeout.TotalSeconds;
-                    rowsAffected += cmd.ExecuteNonQuery();
+                       .Select(m => m.TableColumn.Name)
+                       .ToArray();
+                    var t0ColumnNames = string.Join(",", columns.Select(c => $"[t1].[{c}]"));
+
+                    cmdBody = $@"
+                                 {cmdBody}
+                                 when not matched 
+                                 then INSERT values({t0ColumnNames})
+                                ";
+
                 }
+
+                var cmd = new SqlCommand($@"{cmdBody};", conn, transaction);
+                cmd.CommandTimeout = (int)request.CommandTimeout.TotalSeconds;
+                rowsAffected += cmd.ExecuteNonQuery();
 
                 //
                 // Clean up. Delete the temp table.
@@ -1115,7 +1113,7 @@ namespace Tanneryd.BulkOperations.EF6
                 .Where(p => columnMappings.ContainsKey(p.Name)).ToArray();
 
             var table = new DataTable();
-            
+
 
             // Check to see if the table has a primary key.
             dynamic declaringType = columnMappings
@@ -1324,8 +1322,8 @@ namespace Tanneryd.BulkOperations.EF6
                         using (var sqlDataReader = cmd.ExecuteReader())
                         {
                             ids = (from IDataRecord r in sqlDataReader
-                                       let pk = r[pkColumn.Name]
-                                    select pk)
+                                   let pk = r[pkColumn.Name]
+                                   select pk)
                                 .OrderBy(i => i)
                                 .ToArray();
                         }
@@ -1627,7 +1625,7 @@ namespace Tanneryd.BulkOperations.EF6
                 SqlBulkCopyOptions.KeepIdentity,
                 true);
 
-           //
+            //
             // Fill the data table with our entities.
             //
             if (entities[0] is ExpandoObject)
