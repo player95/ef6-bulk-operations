@@ -197,6 +197,15 @@ namespace Tanneryd.BulkOperations.EF6.Tests
             yield return composite;
         }
 
+        public void RefreshAll(DbContext ctx)
+        {
+            foreach (var entity in ctx.ChangeTracker.Entries())
+            {
+                entity.Reload();
+            }
+        }
+
+
     }
 
     internal class Num

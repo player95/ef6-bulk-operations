@@ -1,5 +1,6 @@
 ﻿/*
  * Copyright ©  2017-2018 Tånneryd IT AB
+ * Modified by larry.liu 2018.12.14, Copyright © 2018 Grapecity.com
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,6 +36,9 @@ namespace Tanneryd.BulkOperations.EF6.Model
         public SqlTransaction Transaction { get; set; }
         public bool InsertIfNew { get; set; }
         public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromMinutes(30);
+
+        public Func<String, string> GetUpdateStatement { get; set; }
+        public Func<String, string> GetInsertStatement { get; set; }
 
     }
 }

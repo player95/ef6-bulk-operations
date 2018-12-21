@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Tanneryd.BulkOperations.EF6.Model;
@@ -49,21 +51,45 @@ namespace Tanneryd.BulkOperations.EF6.Tests
                     Recursive = true
                 };
                 var response = db.BulkInsertAll(req);
-
                 var b = db.Blogs.Single();
                 Assert.AreEqual("My Blog", b.Name);
+                Assert.AreEqual(2, b.BlogPosts.Count);
+                //Assert.AreEqual("My second blogpost.", b.BlogPosts.First(p=>p.PostKeywords.Any(k=>k.Text== "second")).Text);
 
-                b.Name = "My (modified) Blog";
-                db.BulkUpdateAll(new BulkUpdateRequest
-                {
-                    Entities = new [] { b },
-                    KeyPropertyNames = new [] { "Id" }
-                });
-
-                b = db.Blogs.Single();
-                Assert.AreEqual("My (modified) Blog", b.Name);
             }
         }
+      
+        [TestMethod]
+        public void ModifiedEntityShouldBeUpdatedWithInsert()
+        {
+            using (var db = new BlogContext())
+            {
+                var blog = new Blog { Name = "My Blog1" };
+                db.Blogs.Add(blog);
+                db.SaveChanges();
+                              
+                var blog2 = new Blog { Name = "My Blog2",Id=Guid.NewGuid()};
+                db.BulkUpdateAll(new BulkUpdateRequest
+                {
+                    Entities = new[] { blog, blog2 },
+                    GetUpdateStatement = (name) =>
+                    {
+                        return $"t1.[{name}]+'(updated)'";
+                    },
+                    GetInsertStatement = (name) =>
+                    {
+                        return $"t1.[{name}]+'(Inserted)'";
+                    },
+                    InsertIfNew = true
+                });
+                RefreshAll(db);
+                Assert.AreEqual(db.Blogs.Count(), 2);
+                var b1 = db.Blogs.First(p=>p.Id== blog.Id);
+                Assert.AreEqual(b1.Name,"My Blog1(updated)");
+                var b2 = db.Blogs.First(p => p.Id != blog.Id);
+                Assert.AreEqual(b2.Name, "My Blog2(Inserted)");
 
+            }
+        }
     }
 }

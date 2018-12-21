@@ -763,7 +763,15 @@ namespace Tanneryd.BulkOperations.EF6
                 //
                 // Update the target table using the temp table we just created.
                 //
-                var setStatements = modifiedColumnMappings.Select(c => $"t0.[{c.TableColumn.Name}] = t1.[{c.TableColumn.Name}]");
+                Func<string, string> getUpdateStatement = (name) =>
+                {
+                    if (request.GetUpdateStatement == null)
+                    {
+                        return $"t1.[{name}]";
+                    }
+                    return request.GetUpdateStatement(name);
+                };
+                var setStatements = modifiedColumnMappings.Select(c => $"t0.[{c.TableColumn.Name}] = {getUpdateStatement(c.TableColumn.Name)}");
                 var setStatementsSql = string.Join(" , ", setStatements);
                 var conditionStatements = selectedKeyMappings.Select(c => $"t0.[{c.TableColumn.Name}] = t1.[{c.TableColumn.Name}]");
                 var conditionStatementsSql = string.Join(" AND ", conditionStatements);
@@ -780,9 +788,16 @@ namespace Tanneryd.BulkOperations.EF6
                        .Where(m => !(m.TableColumn.IsStoreGeneratedIdentity || m.TableColumn.IsStoreGeneratedComputed))
                        .Select(m => m.TableColumn.Name)
                        .ToArray();
+                    Func<string, string> getInsertStatement = (name) =>
+                    {
+                        if (request.GetInsertStatement == null)
+                        {
+                            return $"t1.[{name}]";
+                        }
+                        return request.GetInsertStatement(name);
+                    };
                     var columnNames = string.Join(",", columns.Select(c => $"[{c}]"));
-                    var t0ColumnNames = string.Join(",", columns.Select(c => $"[t1].[{c}]"));
-
+                    var t0ColumnNames = string.Join(",", columns.Select(c => $"{getInsertStatement(c)}"));
                     cmdBody = $@"
                                  {cmdBody}
                                  WHEN NOT MATCHED 
